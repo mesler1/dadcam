@@ -9,11 +9,15 @@
 #   2. Creates a Python virtualenv at ~/dadcam/venv
 #   3. Installs CPU-only PyTorch, then all pip requirements
 #   4. Creates the user config file if it does not exist
-#   5. Prints next steps (sudo dadcam --setup)
+#   5. Installs the systemd user service unit (~/.config/systemd/user/)
+#   6. Enables systemd linger for the current user (sudo loginctl enable-linger)
+#   7. Reloads the systemd user daemon
+#   8. Prints next steps (sudo dadcam --setup for the udev rule only)
 #
 # SteamOS note:
-#   The virtualenv lives entirely in /home/deck — no system Python modification.
-#   The udev rule (written to /etc) is handled by --setup, not this script.
+#   The virtualenv and systemd user service live entirely in /home/deck — no
+#   system Python modification and no read-only root filesystem changes needed.
+#   The udev rule (written to /etc) is the only thing handled by --setup.
 #   SteamOS updates may wipe /etc/udev/rules.d/. Re-run --setup after OS updates.
 
 set -euo pipefail
@@ -110,7 +114,38 @@ ok "Data directories ready"
 # ── 8. Make dadcam.py executable ─────────────────────────────────────────────
 chmod +x "$SCRIPT_DIR/dadcam.py"
 
-# ── 9. Check for udev rule (installed by --setup) ─────────────────────────────
+# ── 9. Install systemd user service unit ─────────────────────────────────────
+SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
+SERVICE_FILE="$SYSTEMD_USER_DIR/dadcam@.service"
+info "Installing systemd user service unit at $SERVICE_FILE …"
+mkdir -p "$SYSTEMD_USER_DIR"
+cat > "$SERVICE_FILE" <<EOF
+[Unit]
+Description=dadcam media processor for /dev/%I
+After=dev-%i.device
+Requires=dev-%i.device
+AssertPathExists=/dev/%I
+
+[Service]
+Type=oneshot
+ExecStart=$VENV_PYTHON $SCRIPT_DIR/dadcam.py --process --device /dev/%I
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=3600
+EOF
+ok "Systemd user service installed: $SERVICE_FILE"
+
+# ── 10. Enable systemd linger for the current user ───────────────────────────
+info "Enabling systemd linger for $USER (requires sudo) …"
+sudo loginctl enable-linger "$USER"
+ok "Linger enabled for $USER"
+
+# ── 11. Reload systemd user daemon ───────────────────────────────────────────
+info "Reloading systemd user daemon …"
+systemctl --user daemon-reload
+ok "systemd user daemon reloaded"
+
+# ── 12. Check for udev rule (installed by --setup) ───────────────────────────
 UDEV_RULE="/etc/udev/rules.d/99-dadcam.rules"
 echo ""
 echo "─────────────────────────────────────────────"
@@ -120,6 +155,9 @@ echo "Next step: whitelist your CF drive and install the udev rule."
 echo "Insert the CF card now, then run:"
 echo ""
 echo -e "  ${BOLD}sudo $VENV_PYTHON $SCRIPT_DIR/dadcam.py --setup${RESET}"
+echo ""
+echo "(--setup only writes the udev rule to /etc — no read-only root changes needed"
+echo "for the service unit or linger, as those were handled above.)"
 echo ""
 if [[ -f "$UDEV_RULE" ]]; then
     ok "udev rule already present at $UDEV_RULE"
