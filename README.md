@@ -47,6 +47,9 @@ This will:
 - Create `~/dadcam/venv/` with an isolated Python environment
 - Install CPU-only PyTorch (~200 MB) and all other dependencies
 - Write a default config to `~/.config/dadcam/dadcam.conf`
+- Install `~/.config/systemd/user/dadcam@.service` (no root required)
+- Enable systemd linger via `sudo loginctl enable-linger deck` so the service
+  activates at boot without a desktop login (does **not** disable the read-only root fs)
 
 ### 3. Edit your config
 
@@ -73,8 +76,6 @@ The wizard will:
 - Detect the inserted card and display its UUID and serial
 - Ask you to confirm whitelisting
 - Write `/etc/udev/rules.d/99-dadcam.rules` (briefly disables SteamOS read-only fs)
-- Install `~/.config/systemd/user/dadcam@.service`
-- Enable systemd linger so the service activates at boot without a desktop login
 
 From this point, **inserting the CF card triggers processing automatically**.
 

@@ -12,10 +12,11 @@ Steps:
   6. steamos-readonly disable (Steam Deck only)
   7. Write /etc/udev/rules.d/99-dadcam.rules
   8. steamos-readonly enable
-  9. Write ~/.config/systemd/user/dadcam@.service (as the deck user)
- 10. loginctl enable-linger <deck_user>
- 11. udevadm control --reload-rules && udevadm trigger
- 12. systemctl --user --machine=<uid>@ daemon-reload
+  9. udevadm control --reload-rules && udevadm trigger
+
+Note: the systemd user service unit and loginctl linger are set up by
+install.sh (as the deck user, no read-only root changes required).  This
+wizard only handles the udev rule, which is the only piece that lives in /etc.
 
 This wizard is idempotent: re-running it adds the new drive to the whitelist
 and re-writes the udev rule (which is identical regardless of which drive was
@@ -24,7 +25,6 @@ whitelisted, since filtering is done in Python at runtime).
 
 from __future__ import annotations
 
-import grp
 import os
 import pwd
 import subprocess
@@ -62,23 +62,6 @@ UDEV_RULE_TEMPLATE = """\
 ACTION=="add", SUBSYSTEM=="block", ENV{{DEVTYPE}}=="partition", \\
   TAG+="systemd", \\
   ENV{{SYSTEMD_USER_WANTS}}="dadcam@%k.service"
-"""
-
-SYSTEMD_SERVICE_TEMPLATE = """\
-[Unit]
-Description=dadcam media processor for /dev/%I
-After=dev-%i.device
-Requires=dev-%i.device
-# Give the filesystem a moment to settle after device detection
-AssertPathExists=/dev/%I
-
-[Service]
-Type=oneshot
-ExecStart={python} {script} --process --device /dev/%I
-StandardOutput=journal
-StandardError=journal
-TimeoutStartSec=3600
-# Restart=no is implicit for oneshot
 """
 
 # ---------------------------------------------------------------------------
@@ -151,20 +134,6 @@ def _detect_real_user() -> tuple[str, int]:
         return "root", 0
 
 
-def _service_path_for(uid: int, username: str) -> Path:
-    """Return path to the systemd user service directory for the given user."""
-    home = Path(f"/home/{username}") if username != "root" else Path("/root")
-    return home / ".config" / "systemd" / "user"
-
-
-def _write_as_user(path: Path, content: str, uid: int, gid: int) -> None:
-    """Write *content* to *path*, then chown to uid:gid."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
-    os.chown(path, uid, gid)
-    os.chown(path.parent, uid, gid)
-
-
 def _steamos_readonly(*, enable: bool) -> None:
     action = "enable" if enable else "disable"
     try:
@@ -220,7 +189,7 @@ def run_setup() -> None:
 
     con.print(Panel(
         "[bold cyan]dadcam setup wizard[/bold cyan]\n"
-        "This will whitelist a CF drive and install the udev rule & systemd service.",
+        "This will whitelist a CF drive and install the udev rule.",
         title="dadcam",
         expand=False,
     ))
@@ -313,25 +282,7 @@ def run_setup() -> None:
     finally:
         _steamos_readonly(enable=True)
 
-    # ── 5. Write systemd user service ───────────────────────────────────
-    python_path = str(VENV_PYTHON) if VENV_PYTHON.exists() else sys.executable
-    service_content = SYSTEMD_SERVICE_TEMPLATE.format(
-        python=python_path,
-        script=str(SCRIPT_PATH),
-    )
-    service_dir = _service_path_for(real_uid, real_user)
-    service_file = service_dir / "dadcam@.service"
-    _write_as_user(service_file, service_content, real_uid, real_gid)
-    con.print(f"[green]✓[/green] Wrote systemd user service: {service_file}")
-
-    # ── 6. Enable linger ────────────────────────────────────────────────
-    try:
-        _run(["loginctl", "enable-linger", real_user])
-        con.print(f"[green]✓[/green] Enabled linger for {real_user}")
-    except subprocess.CalledProcessError as exc:
-        con.print(f"[yellow]Warning:[/yellow] loginctl enable-linger failed: {exc}")
-
-    # ── 7. Reload udev and systemd user daemon ───────────────────────────
+    # ── 5. Reload udev ───────────────────────────────────────────────────
     try:
         _run(["udevadm", "control", "--reload-rules"])
         _run(["udevadm", "trigger"])
@@ -339,21 +290,7 @@ def run_setup() -> None:
     except subprocess.CalledProcessError as exc:
         con.print(f"[yellow]Warning:[/yellow] udevadm reload failed: {exc}")
 
-    try:
-        _run(
-            [
-                "systemctl",
-                "--user",
-                f"--machine={real_user}@",
-                "daemon-reload",
-            ],
-            check=False,
-        )
-        con.print("[green]✓[/green] systemd user daemon reloaded")
-    except Exception as exc:
-        con.print(f"[yellow]Warning:[/yellow] systemd user daemon-reload failed: {exc}")
-
-    # ── 8. Done ──────────────────────────────────────────────────────────
+    # ── 6. Done ──────────────────────────────────────────────────────────
     con.print()
     con.rule("[green]Setup complete[/green]")
     con.print(
