@@ -1,0 +1,14 @@
+# dadcam dependencies
+# Install inside a virtualenv: pip install -r requirements.txt
+#
+# For CPU-only PyTorch (smaller download, correct for Steam Deck):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+# Then:
+#   pip install -r requirements.txt
+
+ultralytics>=8.0
+opencv-python-headless>=4.8
+Pillow>=10.0
+pyudev>=0.24
+tomli>=2.0; python_version < "3.11"
+rich>=13.0
