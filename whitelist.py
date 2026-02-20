@@ -3,9 +3,15 @@ whitelist.py — manage the dadcam drive whitelist.
 
 Whitelist file location: ~/.config/dadcam/whitelist.conf
 Format: one entry per line, either:
-    UUID=A1B2-C3D4
-    SERIAL=LEXAR_CF_12345
+    UUID=A1B2-C3D4       (specific card, matched by filesystem UUID)
+    SERIAL=LEXAR_CF_12345  (device/reader serial — any card in this reader is allowed)
 Blank lines and lines starting with # are ignored.
+
+The recommended approach is to whitelist by SERIAL (the CF card reader's serial
+number, as reported by udev).  This allows any CF card inserted into that reader
+to be processed automatically, without needing to whitelist each card individually.
+UUID entries are retained for backward compatibility and for readers that do not
+expose a serial number.
 """
 
 from __future__ import annotations

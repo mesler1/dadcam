@@ -44,6 +44,7 @@ class SortAction(Enum):
     SKIP_DUPLICATE = auto()   # already at destination, source removed
     COPY_ERROR = auto()       # copy or verify failed, source kept
     DETECTION_ERROR = auto()  # inference failed, source kept
+    DRY_RUN = auto()          # dry-run: logged only, nothing written or removed
 
 
 @dataclass
@@ -87,14 +88,16 @@ def _safe_dest_path(dest_dir: Path, relative: Path) -> Path:
 
 
 class FileSorter:
-    def __init__(self, config: PathsConfig) -> None:
+    def __init__(self, config: PathsConfig, dry_run: bool = False) -> None:
         self.dest_root = Path(config.destination).resolve()
         self.detections_dir = self.dest_root / "detections"
         self.no_detections_dir = self.dest_root / "no_detections"
+        self.dry_run = dry_run
 
-        # Create output directories up front
-        for d in (self.detections_dir, self.no_detections_dir):
-            d.mkdir(parents=True, exist_ok=True)
+        if not dry_run:
+            # Create output directories up front
+            for d in (self.detections_dir, self.no_detections_dir):
+                d.mkdir(parents=True, exist_ok=True)
 
     def sort(self, media_file: MediaFile, detection: DetectionResult) -> SortResult:
         """Process one file: copy to the appropriate folder then remove source."""
@@ -120,6 +123,20 @@ class FileSorter:
                 detection=detection,
                 action=SortAction.COPY_ERROR,
                 error=str(exc),
+            )
+
+        # ---- Dry-run: log and return without touching the filesystem ----
+        if self.dry_run:
+            logger.info(
+                "DRY-RUN would move %s → %s",
+                media_file.path.name,
+                dest_path.relative_to(self.dest_root),
+            )
+            return SortResult(
+                media_file=media_file,
+                detection=detection,
+                action=SortAction.DRY_RUN,
+                dest_path=dest_path,
             )
 
         # ---- Deduplication check ----------------------------------------

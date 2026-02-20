@@ -71,12 +71,13 @@ class ReportWriter:
         # Counts
         total = len(results)
         n_moved = sum(1 for r in results if r.action == SortAction.MOVED)
+        n_dry = sum(1 for r in results if r.action == SortAction.DRY_RUN)
         n_dup = sum(1 for r in results if r.action == SortAction.SKIP_DUPLICATE)
         n_det_err = sum(1 for r in results if r.action == SortAction.DETECTION_ERROR)
         n_copy_err = sum(1 for r in results if r.action == SortAction.COPY_ERROR)
         n_detected = sum(
             1 for r in results if r.detection.detected
-            and r.action in (SortAction.MOVED, SortAction.SKIP_DUPLICATE)
+            and r.action in (SortAction.MOVED, SortAction.SKIP_DUPLICATE, SortAction.DRY_RUN)
         )
 
         # Top detected labels
@@ -101,6 +102,7 @@ class ReportWriter:
             f"| Run start | {start_str} |",
             f"| Run end | {end_str} |",
             f"| Duration | {duration} |",
+            f"| Dry run | {'yes — no files were moved or removed' if n_dry > 0 else 'no'} |",
             "",
             "## Summary",
             "",
@@ -108,6 +110,7 @@ class ReportWriter:
             f"|--------|-------|",
             f"| Total files processed | {total} |",
             f"| Moved to destination | {n_moved} |",
+            f"| Would move (dry run) | {n_dry} |",
             f"| Skipped (duplicate) | {n_dup} |",
             f"| Detection errors | {n_det_err} |",
             f"| Copy errors | {n_copy_err} |",

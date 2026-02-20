@@ -189,14 +189,15 @@ def run_setup() -> None:
 
     con.print(Panel(
         "[bold cyan]dadcam setup wizard[/bold cyan]\n"
-        "This will whitelist a CF drive and install the udev rule.",
+        "This will whitelist a CF card reader device (any card inserted into it\n"
+        "will be processed automatically) and install the udev rule.",
         title="dadcam",
         expand=False,
     ))
     con.print(f"Running as: [bold]{real_user}[/bold] (uid={real_uid})\n")
 
     # ── 2. Watch for device insertion ───────────────────────────────────
-    con.print("Please [bold yellow]insert the CF card[/bold yellow] you want to whitelist …")
+    con.print("Please [bold yellow]insert a CF card[/bold yellow] to detect the reader device …")
 
     context = pyudev.Context()
     monitor = pyudev.Monitor.from_netlink(context)
@@ -228,12 +229,17 @@ def run_setup() -> None:
         con.print(f"  Model  : {model or '(none)'}")
         con.print()
 
-        if not uuid and not serial:
-            con.print("[yellow]Warning:[/yellow] No UUID or serial found for this device.")
-            con.print("Cannot whitelist without at least one identifier. Try another device.")
-            continue
+        if not serial:
+            if not uuid:
+                con.print("[yellow]Warning:[/yellow] No serial or UUID found for this device.")
+                con.print("Cannot whitelist without at least one identifier. Try another device.")
+                continue
+            con.print(
+                "[yellow]Warning:[/yellow] No reader serial found. "
+                "Only this specific card (by UUID) can be whitelisted."
+            )
 
-        if not _confirm("Whitelist this drive?", default=True):
+        if not _confirm("Whitelist this device?  (Any CF card in this reader will be processed)", default=True):
             con.print("Skipping. Re-insert a different drive or Ctrl-C to abort.")
             continue
 
@@ -260,12 +266,17 @@ def run_setup() -> None:
     original_home = os.environ.get("HOME")
     os.environ["HOME"] = str(Path(f"/home/{real_user}"))
 
-    if device_info["uuid"]:
-        wl.add_entry("UUID", device_info["uuid"])
-        con.print(f"[green]✓[/green] Added UUID={device_info['uuid']} to whitelist")
     if device_info["serial"]:
+        # Device-level: any CF card in this reader will be processed
         wl.add_entry("SERIAL", device_info["serial"])
-        con.print(f"[green]✓[/green] Added SERIAL={device_info['serial']} to whitelist")
+        con.print(f"[green]✓[/green] Added SERIAL={device_info['serial']} to whitelist (any card in this reader)")
+    elif device_info["uuid"]:
+        # Fallback: no reader serial available; whitelist this specific card by UUID
+        wl.add_entry("UUID", device_info["uuid"])
+        con.print(
+            f"[green]✓[/green] Added UUID={device_info['uuid']} to whitelist "
+            "(this specific card only — reader serial unavailable)"
+        )
 
     if original_home:
         os.environ["HOME"] = original_home
@@ -294,7 +305,7 @@ def run_setup() -> None:
     con.print()
     con.rule("[green]Setup complete[/green]")
     con.print(
-        "Insert the whitelisted CF card at any time and "
+        "Insert [bold]any CF card[/bold] into the whitelisted reader at any time and "
         "dadcam will run automatically.\n"
         f"Logs: [bold]journalctl --user -u 'dadcam@*.service'[/bold]"
     )

@@ -10,6 +10,9 @@ Usage:
         Process the media on the given block device.
         Usually invoked automatically by the systemd user service on CF insertion.
 
+    python dadcam.py --process --device /dev/sda1 --dry-run
+        Same as above but only logs what would happen; no files are copied or removed.
+
     python dadcam.py --report [--last N]
         Print the paths of the last N reports (default 5).
 
@@ -156,9 +159,11 @@ def _unmount_device(device: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def run_process(device: str, cfg: DadcamConfig) -> int:
+def run_process(device: str, cfg: DadcamConfig, dry_run: bool = False) -> int:
     """Full processing pipeline. Returns exit code (0 = success)."""
     logger.info("=== dadcam process started — device: %s ===", device)
+    if dry_run:
+        logger.info("DRY-RUN mode: no files will be copied or removed")
     run_start = datetime.now()
 
     # ── 1. Whitelist check ───────────────────────────────────────────────
@@ -181,7 +186,7 @@ def run_process(device: str, cfg: DadcamConfig) -> int:
     logger.info("Mounted at: %s", mount_path)
 
     try:
-        return _process_mounted(device, mount_path, cfg, run_start)
+        return _process_mounted(device, mount_path, cfg, run_start, dry_run=dry_run)
     finally:
         _unmount_device(device)
 
@@ -191,6 +196,7 @@ def _process_mounted(
     mount_path: Path,
     cfg: DadcamConfig,
     run_start: datetime,
+    dry_run: bool = False,
 ) -> int:
     dest_path = Path(cfg.paths.destination)
 
@@ -211,7 +217,7 @@ def _process_mounted(
 
     # ── 4 + 5. Detect + Sort ──────────────────────────────────────────────
     engine = DetectionEngine(cfg.detection)
-    sorter = FileSorter(cfg.paths)
+    sorter = FileSorter(cfg.paths, dry_run=dry_run)
     sort_results = []
 
     if _RICH:
@@ -252,23 +258,38 @@ def _process_mounted(
 
     # Print summary
     moved = sum(1 for r in sort_results if r.action == SortAction.MOVED)
+    dry = sum(1 for r in sort_results if r.action == SortAction.DRY_RUN)
     dupes = sum(1 for r in sort_results if r.action == SortAction.SKIP_DUPLICATE)
     errors = sum(1 for r in sort_results if r.action in (SortAction.COPY_ERROR, SortAction.DETECTION_ERROR))
     detected = sum(1 for r in sort_results if r.detection.detected)
 
-    logger.info(
-        "Run complete — total=%d moved=%d duplicates=%d errors=%d detections=%d",
-        len(sort_results), moved, dupes, errors, detected,
-    )
+    if dry_run:
+        logger.info(
+            "Dry-run complete — total=%d would-move=%d errors=%d detections=%d",
+            len(sort_results), dry, errors, detected,
+        )
+    else:
+        logger.info(
+            "Run complete — total=%d moved=%d duplicates=%d errors=%d detections=%d",
+            len(sort_results), moved, dupes, errors, detected,
+        )
     logger.info("Report: %s", report_path)
 
     if _RICH:
-        Console().print(
-            f"\n[bold green]Done.[/bold green] "
-            f"{moved} moved, {dupes} duplicates, {errors} errors, "
-            f"{detected} with detections.\n"
-            f"Report: [underline]{report_path}[/underline]"
-        )
+        if dry_run:
+            Console().print(
+                f"\n[bold yellow]Dry run complete.[/bold yellow] "
+                f"{dry} would be moved, {detected} with detections. "
+                f"No files were copied or removed.\n"
+                f"Report: [underline]{report_path}[/underline]"
+            )
+        else:
+            Console().print(
+                f"\n[bold green]Done.[/bold green] "
+                f"{moved} moved, {dupes} duplicates, {errors} errors, "
+                f"{detected} with detections.\n"
+                f"Report: [underline]{report_path}[/underline]"
+            )
 
     return 0 if errors == 0 else 2
 
@@ -341,6 +362,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Number of recent reports to show (default: 5).",
     )
 
+    # --dry-run
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help=(
+            "Log what would happen without copying or removing any files. "
+            "A report is still written. Implies --process."
+        ),
+    )
+
     # --list-whitelist
     parser.add_argument(
         "--list-whitelist",
@@ -394,7 +426,8 @@ def main() -> None:
         return
 
     # ── Process mode ─────────────────────────────────────────────────────
-    if args.process or args.device or args.source:
+    if args.process or args.device or args.source or args.dry_run:
+        dry_run: bool = args.dry_run
         if args.source:
             # Directory mode — skip mount/unmount/whitelist
             source_path = Path(args.source)
@@ -404,10 +437,10 @@ def main() -> None:
             run_start = datetime.now()
             dest_path = Path(cfg.paths.destination)
             sys.exit(
-                _process_mounted(args.source, source_path, cfg, run_start)
+                _process_mounted(args.source, source_path, cfg, run_start, dry_run=dry_run)
             )
         elif args.device:
-            sys.exit(run_process(args.device, cfg))
+            sys.exit(run_process(args.device, cfg, dry_run=dry_run))
         else:
             parser.error("--process requires --device <dev> or --source <dir>")
         return

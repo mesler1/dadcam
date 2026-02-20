@@ -64,20 +64,20 @@ At minimum, set the destination — typically your SD card:
 destination = "/run/media/deck/MY_SDCARD/dadcam_output"
 ```
 
-### 4. Whitelist your CF card and install the udev rule
+### 4. Whitelist your CF card reader and install the udev rule
 
-Insert the CF card, then run the setup wizard **once**:
+Insert any CF card into your reader, then run the setup wizard **once**:
 
 ```bash
 sudo ~/dadcam/venv/bin/python ~/dadcam/dadcam.py --setup
 ```
 
 The wizard will:
-- Detect the inserted card and display its UUID and serial
-- Ask you to confirm whitelisting
+- Detect the inserted card and display the reader's serial and device info
+- Ask you to confirm whitelisting the reader device
 - Write `/etc/udev/rules.d/99-dadcam.rules` (briefly disables SteamOS read-only fs)
 
-From this point, **inserting the CF card triggers processing automatically**.
+From this point, **inserting any CF card into the whitelisted reader triggers processing automatically**.
 
 ---
 
@@ -85,7 +85,7 @@ From this point, **inserting the CF card triggers processing automatically**.
 
 ### Automatic (normal use)
 
-Insert the whitelisted CF card. Processing starts within a few seconds.
+Insert any CF card into the whitelisted reader. Processing starts within a few seconds.
 Watch progress in real time:
 
 ```bash
@@ -97,6 +97,22 @@ journalctl --user -u 'dadcam@*.service' -f
 ```bash
 ~/dadcam/venv/bin/python ~/dadcam/dadcam.py --source /path/to/photos
 ```
+
+### Dry run — preview without moving files
+
+Pass `--dry-run` with any `--process` or `--source` invocation to run the full
+detection pipeline and write a report, but **without copying or deleting anything**:
+
+```bash
+# Dry run on a directory
+~/dadcam/venv/bin/python ~/dadcam/dadcam.py --source /path/to/photos --dry-run
+
+# Dry run on a device
+~/dadcam/venv/bin/python ~/dadcam/dadcam.py --process --device /dev/sda1 --dry-run
+```
+
+Each file will be logged as `DRY-RUN would move …` and the report will indicate
+that no files were moved or removed.
 
 ### Manual — process a specific device
 
@@ -116,13 +132,15 @@ journalctl --user -u 'dadcam@*.service' -f
 ~/dadcam/venv/bin/python ~/dadcam/dadcam.py --list-whitelist
 ```
 
-### Add another CF card
+### Add another CF card reader
 
-Re-run setup with the new card inserted:
+Re-run setup with a card inserted in the new reader:
 
 ```bash
 sudo ~/dadcam/venv/bin/python ~/dadcam/dadcam.py --setup
 ```
+
+Once the reader is whitelisted, any card you insert into it will be processed automatically.
 
 ---
 
@@ -199,7 +217,7 @@ log_file = "/home/deck/.local/share/dadcam/logs/dadcam.log"
 |------|---------|
 | `~/dadcam/` | Scripts and virtualenv |
 | `~/.config/dadcam/dadcam.conf` | User configuration |
-| `~/.config/dadcam/whitelist.conf` | Whitelisted CF card UUIDs / serials |
+| `~/.config/dadcam/whitelist.conf` | Whitelisted CF card reader serials (device-level) |
 | `~/.config/systemd/user/dadcam@.service` | systemd user service unit |
 | `~/.local/share/dadcam/models/yolov8n.pt` | Cached model weights |
 | `~/.local/share/dadcam/logs/dadcam.log` | Persistent log file |
@@ -232,7 +250,7 @@ sudo ~/dadcam/venv/bin/python ~/dadcam/dadcam.py --setup
 
 **"Device not whitelisted" in logs**
 
-The card's UUID or serial doesn't match the whitelist.  Run setup again with the card inserted.
+The card's reader serial (or UUID for legacy entries) doesn't match the whitelist.  Run setup again with a card inserted in the reader.
 
 ```bash
 ~/dadcam/venv/bin/python ~/dadcam/dadcam.py --list-whitelist
