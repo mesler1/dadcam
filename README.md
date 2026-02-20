@@ -98,6 +98,22 @@ journalctl --user -u 'dadcam@*.service' -f
 ~/dadcam/venv/bin/python ~/dadcam/dadcam.py --source /path/to/photos
 ```
 
+### Dry run — preview without moving files
+
+Pass `--dry-run` with any `--process` or `--source` invocation to run the full
+detection pipeline and write a report, but **without copying or deleting anything**:
+
+```bash
+# Dry run on a directory
+~/dadcam/venv/bin/python ~/dadcam/dadcam.py --source /path/to/photos --dry-run
+
+# Dry run on a device
+~/dadcam/venv/bin/python ~/dadcam/dadcam.py --process --device /dev/sda1 --dry-run
+```
+
+Each file will be logged as `DRY-RUN would move …` and the report will indicate
+that no files were moved or removed.
+
 ### Manual — process a specific device
 
 ```bash
